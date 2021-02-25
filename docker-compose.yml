@@ -1,0 +1,102 @@
+version: "3"
+
+networks:
+  laravel:
+
+services:
+  nginx:
+    image: nginx:stable-alpine
+    container_name: octocloud-nginx
+    ports:
+      - "${APP_PORT:-80}:80"
+    volumes:
+      - .:/var/www
+      - ./docker/dev/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/dev/nginx/sites-enabled/:/etc/nginx/sites-enabled/
+    depends_on:
+      - php
+      - mysql
+      - minio
+    networks:
+      - laravel
+
+  mysql:
+    image: mysql:5.7.22
+    container_name: octocloud-mysql
+    ports:
+      - "${MYSQL_DB_PORT:-3306}:3306"
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD}"
+      MYSQL_DATABASE: "${DB_DATABASE}"
+      MYSQL_USER: "${DB_USERNAME}"
+      MYSQL_PASSWORD: "${DB_PASSWORD}"
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+    networks:
+      - laravel
+
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: octocloud-php
+    extra_hosts:
+      - "octocloud.minio.dev:${DOCKER_INTERNAL_HOST}"
+    volumes:
+      - .:/var/www
+      - ./docker/dev/php-ext/docker-php-ext-xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+    networks:
+      - laravel
+
+  adminer:
+    image: adminer
+    container_name: octocloud-adminer
+    restart: always
+    ports:
+      - ${DB_ADMIN_PORT:-8080}:8080
+    networks:
+      - laravel
+
+  redis:
+    container_name: octocloud-redis
+    image: "redis:alpine"
+    networks:
+      - laravel
+
+  redis-admin:
+    container_name: octocloud-redis-admin
+    image: erikdubbelboer/phpredisadmin
+    ports:
+      - ${REDIS_ADMIN_PORT:-8081}:80
+    depends_on:
+      - php
+      - redis
+    environment:
+      - REDIS_1_HOST=redis
+    networks:
+      - laravel
+
+  minio:
+    container_name: octocloud-minio
+    image: minio/minio
+    volumes:
+      - ./data/cloud/:/data
+    ports:
+      - ${MINIO_PORT:-9000}:9000
+    environment:
+      MINIO_ACCESS_KEY: minio
+      MINIO_SECRET_KEY: minio123
+      MINIO_DOMAIN: minio
+    command: server /data
+    networks:
+      - laravel
+
+  mailhog:
+    image: "mailhog/mailhog:latest"
+    container_name: octocloud-mailhog
+    ports:
+      - "${MAILHOG_PORT:-1025}:1025"
+      - "${MAILHOG_DASHBOARD_PORT:-8025}:8025"
+    networks:
+      - laravel
